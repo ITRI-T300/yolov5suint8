@@ -19,12 +19,15 @@
 
 #define _BASETSD_H
 
+extern "C" {
 #include "vsi_nn_pub.h"
 
 #include "vnn_global.h"
 #include "vnn_pre_process.h"
 #include "vnn_post_process.h"
 #include "vnn_yolov5suint8.h"
+}
+#include <opencv2/opencv.hpp>
 
 /*-------------------------------------------
         Macros and Variables
@@ -248,7 +251,7 @@ int main
     if(VNN_APP_DEBUG)
     {
         /* Dump all node outputs */
-        vsi_nn_DumpGraphNodeOutputs(graph, "./network_dump", NULL, 0, TRUE, 0);
+        vsi_nn_DumpGraphNodeOutputs(graph, "./network_dump", NULL, 0, TRUE, (vsi_nn_dim_fmt_e)0);
     }
 
     /* Post process output data */
