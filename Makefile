@@ -16,7 +16,7 @@ INCLUDES=-I. -I$(VIVANTE_SDK_DIR)/include/ \
   $(shell pkg-config opencv4 --cflags) \
  -I$(VIVANTE_SDK_DIR)/include/jpeg
 
-CFLAGS=-Wall -std=c++0x $(INCLUDES) -D__linux__ -DLINUX
+CFLAGS=-Wall -std=c++0x $(INCLUDES) -D__linux__ -DLINUX -fpermissive
 CFLAGS+=-O3
 LFLAGS+=-O3 -Wl,-rpath-link=$(VIVANTE_SDK_DIR)/drivers
 

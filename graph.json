@@ -1,0 +1,24 @@
+{
+	"MetaData":{
+		"Name": "Ovxlib_Debug_Graph",
+		"AcuityVersion": "UNKNOWN",
+		"Platform": "UNKNOWN",
+		"Org_Platform": "UNKNOWN"
+	},
+	"Layers":{
+		"uid_0":{
+			"op": "NBG",
+			"inputs": [ "@data_input_uid_2:out0" ],
+			"inut_shape": [ [ 640, 640, 3, 1 ] ],
+			"outputs": [ "out0", "out1", "out2" ],
+			"output_shape": [ [ 85, 80, 80, 3, 1 ],[ 85, 40, 40, 3, 1 ],[ 85, 20, 20, 3, 1 ] ]
+		},
+		"data_input_uid_2":{
+			"op": "DATA_INPUT",
+			"inputs": [ ],
+			"inut_shape": [ [ ] ],
+			"outputs": [ "out0" ],
+			"output_shape": [ [ ] ]
+		}
+	}
+}

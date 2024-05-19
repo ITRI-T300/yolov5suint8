@@ -44,7 +44,8 @@ vsi_status vnn_PreProcessYolov5sUint8
     (
     vsi_nn_graph_t *graph,
     const char **inputs,
-    uint32_t input_num
+    uint32_t input_num,
+    uint8_t* rgbData
     );
 
 vsi_bool vnn_UseImagePreprocessNode();

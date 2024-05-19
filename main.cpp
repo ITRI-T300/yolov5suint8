@@ -24,10 +24,14 @@ extern "C" {
 
 #include "vnn_global.h"
 #include "vnn_pre_process.h"
-#include "vnn_post_process.h"
 #include "vnn_yolov5suint8.h"
 }
+
+#include "vnn_post_process.hpp"
 #include <opencv2/opencv.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
 
 /*-------------------------------------------
         Macros and Variables
@@ -41,6 +45,84 @@ extern "C" {
 /*-------------------------------------------
                   Functions
 -------------------------------------------*/
+
+static void draw_objects(const cv::Mat& image, const std::vector<Object>& objects)
+{
+    static const char* class_names[] = {
+        "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
+        "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
+        "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
+        "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard",
+        "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
+        "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
+        "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone",
+        "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
+        "hair drier", "toothbrush"};
+
+   for (size_t i = 0; i < objects.size(); i++)
+    {
+        //
+	// random color mapping
+	//
+	std::vector<cv::Scalar> colors;
+	cv::RNG rng;
+        for (int kI = 0; kI < 100; ++kI) {
+            int r = rng.uniform(0, 256);
+            int g = rng.uniform(0, 256);
+            int b = rng.uniform(0, 256);
+            colors.emplace_back(b, g, r);
+        }
+
+	const Object& obj = objects[i];
+
+        fprintf(stderr, "%2d: %3.0f%%, [%4.0f, %4.0f, %4.0f, %4.0f], %s\n", obj.label, obj.prob * 100, obj.rect.x,
+                obj.rect.y, obj.rect.x + obj.rect.width, obj.rect.y + obj.rect.height, class_names[obj.label]);
+
+        cv::rectangle(image, cv::Rect(obj.rect.x, obj.rect.x, obj.rect.width, obj.rect.height), colors[obj.label], 3);
+
+        char text[256];
+        sprintf(text, "%s %.1f%%", class_names[obj.label], obj.prob * 100);
+
+        int baseLine = 0;
+        cv::Size label_size = cv::getTextSize(text, cv::FONT_HERSHEY_COMPLEX, 0.5, 1, &baseLine);
+
+        int x = obj.rect.x;
+        int y = obj.rect.y - label_size.height - baseLine;
+        if (y < 0)
+            y = 0;
+        if (x + label_size.width > image.cols)
+            x = image.cols - label_size.width;
+
+
+        cv::rectangle(image, cv::Rect(cv::Point(x, y), cv::Size(label_size.width, label_size.height + baseLine)),
+                     colors[obj.label], -1);
+
+        cv::putText(image, text, cv::Point(x, y + label_size.height), cv::FONT_HERSHEY_COMPLEX, 0.5,
+                    cv::Scalar(0, 0, 0), 1);
+    }
+}
+
+//
+// 数据是直接从内存读的，只好把图像数据转成数组
+//
+int Mat_to_array(const cv::Mat input, uint8_t* pRgb)
+{
+    int height = input.rows;
+    int width = input.cols;
+
+    for (int i = 0;i < height;i++)
+    {
+	for (int j = 0;j < width;j++)
+	{
+            for (int k = 0;k < 3;k++)
+            {
+	        pRgb[i * width * 3 + j * 3 + k] = input.at<cv::Vec3b>(i, j)[k];
+	    }
+	}
+    }
+    return 0;
+}
+
 static void vnn_ReleaseNeuralNetwork
     (
     vsi_nn_graph_t *graph
@@ -55,10 +137,11 @@ static void vnn_ReleaseNeuralNetwork
 
 static vsi_status vnn_PostProcessNeuralNetwork
     (
-    vsi_nn_graph_t *graph
+    vsi_nn_graph_t *graph,
+    std::vector<Object>& objects
     )
 {
-    return vnn_PostProcessYolov5sUint8( graph );
+    return vnn_PostProcessYolov5sUint8( graph, objects );
 }
 
 #define BILLION                                 1000000000
@@ -172,7 +255,8 @@ static vsi_status vnn_PreProcessNeuralNetwork
     (
     vsi_nn_graph_t *graph,
     int argc,
-    char **argv
+    char **argv,
+    uint8_t* rgbData
     )
 {
     /*
@@ -183,7 +267,7 @@ static vsi_status vnn_PreProcessNeuralNetwork
     const char **inputs = (const char **)argv + 2;
     uint32_t input_num = argc - 2;
 
-    return vnn_PreProcessYolov5sUint8( graph, inputs, input_num );
+    return vnn_PreProcessYolov5sUint8( graph, inputs, input_num, rgbData );
 }
 
 static vsi_nn_graph_t *vnn_CreateNeuralNetwork
@@ -230,35 +314,141 @@ int main
 
     data_name = (const char *)argv[1];
 
+    cv::VideoCapture cap;
+    cv::Mat img;
+
     /* Create the neural network */
     graph = vnn_CreateNeuralNetwork( data_name );
-    TEST_CHECK_PTR( graph, final );
+    //TEST_CHECK_PTR( graph, final );
 
     /* Verify graph */
     status = vnn_VerifyGraph( graph );
-    TEST_CHECK_STATUS( status, final);
+    //TEST_CHECK_STATUS( status, final);
 
-    /* Pre process the image data */
-    status = vnn_PreProcessNeuralNetwork( graph, argc, argv );
-    TEST_CHECK_STATUS( status, final );
+#if 0
+    //
+    // get frame data from camera
+    //
 
+    cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
+    cap.set(cv::CAP_PROP_FRAME_WIDTH, 640);
+    cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
 
+    cap.open(0);
 
-    /* Process graph */
-    status = vnn_ProcessGraph( graph );
-    TEST_CHECK_STATUS( status, final );
-
-    if(VNN_APP_DEBUG)
+    if (!cap.isOpened())
     {
-        /* Dump all node outputs */
-        vsi_nn_DumpGraphNodeOutputs(graph, "./network_dump", NULL, 0, TRUE, (vsi_nn_dim_fmt_e)0);
+	std::cerr<< "ERROE!!Unable to open camera\n";
+	return -1;
     }
+#else
+    //video
+    cap.open("./test.mp4");
+#endif
 
-    /* Post process output data */
-    status = vnn_PostProcessNeuralNetwork( graph );
-    TEST_CHECK_STATUS( status, final );
+    cap >> img;
 
+    //
+    // convert to fit model's input data format
+    //
+    cv::resize( img, img, cv::Size(640,640) );
+    cv::cvtColor( img, img, cv::COLOR_BGR2RGB );
+
+    uint8_t* pRgb = new uint8_t[img.rows * img.cols * 3];
+    Mat_to_array(img, pRgb);
+
+    /* Inference Process Loop */
+    while(1) {
+
+#if 1
+
+	/*
+	//verify c++ error modified
+	static int picked[100];
+        static int *ppicked=picked;
+	printf("picked=%x,ppicked=%x\n", picked, ppicked);
+	*/
+
+	//dummy input
+	argc = 3;
+	std::string cv_file="cv.jpg";
+	argv[2]=cv_file.c_str();
+
+	status = vnn_PreProcessNeuralNetwork( graph, argc, argv, pRgb);
+#else
+	/* Pre process the image data */
+        status = vnn_PreProcessNeuralNetwork( graph, argc, argv, pRgb);
+#endif
+        //TEST_CHECK_STATUS( status, final );
+
+        /* Process graph */
+        status = vnn_ProcessGraph( graph );
+        //TEST_CHECK_STATUS( status, final );
+
+        if(VNN_APP_DEBUG)
+        {
+            /* Dump all node outputs */
+            vsi_nn_DumpGraphNodeOutputs(graph, "./network_dump", NULL, 0, TRUE,
+			                (vsi_nn_dim_fmt_e)0);
+        }
+
+        /* Post process output data */
+	std::vector<Object> objects;
+
+        status = vnn_PostProcessNeuralNetwork( graph, objects);
+        //TEST_CHECK_STATUS( status, final );
+
+	draw_objects(img, objects);
+
+	/* draw test
+
+	std::vector<Object> objs_cv;
+	Object cv;
+
+        //dummy obj1
+        cv.rect.x=134;
+        cv.rect.y=221;
+        cv.rect.width=305;
+        cv.rect.height=550;
+        cv.label=0;
+        cv.prob=0.91;
+        objs_cv.push_back(cv);
+
+        //dummy obj2
+        cv.rect.x=10;
+        cv.rect.y=30;
+        cv.rect.width=50;
+        cv.rect.height=50;
+        cv.label=3;
+        cv.prob=0.50;
+        objs_cv.push_back(cv);
+
+        draw_objects(img, objs_cv);
+	*/
+
+        //
+        // to make sure output image's colorspace is BGR (OpenCV default)
+        //
+        cv::cvtColor( img, img, cv::COLOR_RGB2BGR );
+
+	cv::namedWindow("C3V-yolov5s", cv::WINDOW_AUTOSIZE);
+	cv::imshow("C3V-yolov5s", img);
+
+	// write out file
+	//std::vector<int> compression_params;
+	//compression_params.push_back(0);
+        //cv::imwrite("cv.bmp",img, compression_params);
+
+	// press 'q' key break main loop
+        if (cv::waitKey(1) == 'q') {
+            break;
+        }
+    }
 final:
+    delete[] pRgb;//release data
+    cap.release();//release cam
+    cv::destroyAllWindows();
+
     vnn_ReleaseNeuralNetwork( graph );
     fflush(stdout);
     fflush(stderr);
