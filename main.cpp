@@ -61,24 +61,27 @@ static void draw_objects(const cv::Mat& image, const std::vector<Object>& object
 
    for (size_t i = 0; i < objects.size(); i++)
     {
-        //
+	//
 	// random color mapping
 	//
 	std::vector<cv::Scalar> colors;
 	cv::RNG rng;
-        for (int kI = 0; kI < 100; ++kI) {
-            int r = rng.uniform(0, 256);
-            int g = rng.uniform(0, 256);
-            int b = rng.uniform(0, 256);
-            colors.emplace_back(b, g, r);
-        }
+	for (int kI = 0; kI < 100; ++kI) {
+		int r = rng.uniform(0, 256);
+		int g = rng.uniform(0, 256);
+		int b = rng.uniform(0, 256);
+		colors.emplace_back(b, g, r);
+    }
 
 	const Object& obj = objects[i];
+
+	if( (obj.label==-1) || std::isnan(obj.prob) )
+		continue;
 
         fprintf(stderr, "%2d: %3.0f%%, [%4.0f, %4.0f, %4.0f, %4.0f], %s\n", obj.label, obj.prob * 100, obj.rect.x,
                 obj.rect.y, obj.rect.x + obj.rect.width, obj.rect.y + obj.rect.height, class_names[obj.label]);
 
-        cv::rectangle(image, cv::Rect(obj.rect.x, obj.rect.x, obj.rect.width, obj.rect.height), colors[obj.label], 3);
+        cv::rectangle(image, cv::Rect(obj.rect.x, obj.rect.y, obj.rect.width, obj.rect.height), colors[obj.label], 3);
 
         char text[256];
         sprintf(text, "%s %.1f%%", class_names[obj.label], obj.prob * 100);
@@ -343,42 +346,34 @@ int main
     }
 #else
     //video
-    cap.open("./test.mp4");
+    cap.open("./input.mp4");
 #endif
-
-    cap >> img;
-
-    //
-    // convert to fit model's input data format
-    //
-    cv::resize( img, img, cv::Size(640,640) );
-    cv::cvtColor( img, img, cv::COLOR_BGR2RGB );
-
-    uint8_t* pRgb = new uint8_t[img.rows * img.cols * 3];
-    Mat_to_array(img, pRgb);
 
     /* Inference Process Loop */
     while(1) {
+        //read frame from cam
+        bool ret = cap.read(img);
+        if(!ret){
+            printf("Can't receive frame.. Exiting..\n");
+            break;
+        }
 
-#if 1
+        //
+        // convert to fit model's input data format
+        //
+        cv::resize( img, img, cv::Size(640,640) );
+        cv::cvtColor( img, img, cv::COLOR_BGR2RGB );
 
-	/*
-	//verify c++ error modified
-	static int picked[100];
-        static int *ppicked=picked;
-	printf("picked=%x,ppicked=%x\n", picked, ppicked);
-	*/
+        uint8_t* pRgb = new uint8_t[img.rows * img.cols * 3];
+        Mat_to_array(img, pRgb);
 
-	//dummy input
-	argc = 3;
-	std::string cv_file="cv.jpg";
-	argv[2]=cv_file.c_str();
+        //dummy input
+        argc = 3;
+        std::string cv_file="cv.jpg";
+        argv[2]=cv_file.c_str();
 
-	status = vnn_PreProcessNeuralNetwork( graph, argc, argv, pRgb);
-#else
-	/* Pre process the image data */
+        /* Pre process the image data */
         status = vnn_PreProcessNeuralNetwork( graph, argc, argv, pRgb);
-#endif
         //TEST_CHECK_STATUS( status, final );
 
         /* Process graph */
@@ -393,59 +388,28 @@ int main
         }
 
         /* Post process output data */
-	std::vector<Object> objects;
+        std::vector<Object> objects;
 
         status = vnn_PostProcessNeuralNetwork( graph, objects);
         //TEST_CHECK_STATUS( status, final );
 
-	draw_objects(img, objects);
-
-	/* draw test
-
-	std::vector<Object> objs_cv;
-	Object cv;
-
-        //dummy obj1
-        cv.rect.x=134;
-        cv.rect.y=221;
-        cv.rect.width=305;
-        cv.rect.height=550;
-        cv.label=0;
-        cv.prob=0.91;
-        objs_cv.push_back(cv);
-
-        //dummy obj2
-        cv.rect.x=10;
-        cv.rect.y=30;
-        cv.rect.width=50;
-        cv.rect.height=50;
-        cv.label=3;
-        cv.prob=0.50;
-        objs_cv.push_back(cv);
-
-        draw_objects(img, objs_cv);
-	*/
+        draw_objects(img, objects);
 
         //
         // to make sure output image's colorspace is BGR (OpenCV default)
         //
         cv::cvtColor( img, img, cv::COLOR_RGB2BGR );
 
-	cv::namedWindow("C3V-yolov5s", cv::WINDOW_AUTOSIZE);
-	cv::imshow("C3V-yolov5s", img);
+        cv::namedWindow("C3V-yolov5s", cv::WINDOW_AUTOSIZE);
+        cv::imshow("C3V-yolov5s", img);
 
-	// write out file
-	//std::vector<int> compression_params;
-	//compression_params.push_back(0);
-        //cv::imwrite("cv.bmp",img, compression_params);
-
-	// press 'q' key break main loop
+        // press 'q' key break main loop
         if (cv::waitKey(1) == 'q') {
             break;
         }
     }
 final:
-    delete[] pRgb;//release data
+    //delete[] pRgb;//release data //TODO: check
     cap.release();//release cam
     cv::destroyAllWindows();
 
