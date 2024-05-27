@@ -7,6 +7,8 @@
 #ifndef _VNN_GLOBAL_H_
 #define _VNN_GLOBAL_H_
 
+#include <omp.h>
+
 typedef struct {
     uint32_t graph_input_idx;
     vsi_nn_preprocess_base_t *preprocesses;
