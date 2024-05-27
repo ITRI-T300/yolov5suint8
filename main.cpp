@@ -42,9 +42,29 @@ extern "C" {
 #define VSI_UINT64_SPECIFIER "I64u"
 #endif
 
+static uint64_t st, frames; // for FPS stat
+
+#define DRAW_RESULT 1
 /*-------------------------------------------
                   Functions
 -------------------------------------------*/
+#define BILLION 1000000000
+uint64_t now()
+{
+#if defined(__linux__) || defined(__ANDROID__) || defined(__QNX__) || defined(__CYGWIN__)
+        struct timespec ts;
+
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+
+        return (uint64_t)((uint64_t)ts.tv_nsec + (uint64_t)ts.tv_sec * BILLION);
+#elif defined(_WIN32) || defined(UNDER_CE)
+        LARGE_INTEGER ln;
+
+        QueryPerformanceCounter(&ln);
+
+        return (uint64_t)ln.QuadPart;
+#endif
+}
 
 static void draw_objects(const cv::Mat& image, const std::vector<Object>& objects)
 {
@@ -77,10 +97,10 @@ static void draw_objects(const cv::Mat& image, const std::vector<Object>& object
 
 	if( (obj.label==-1) || std::isnan(obj.prob) )
 		continue;
-
+#if !DRAW_RESULT
         fprintf(stderr, "%2d: %3.0f%%, [%4.0f, %4.0f, %4.0f, %4.0f], %s\n", obj.label, obj.prob * 100, obj.rect.x,
                 obj.rect.y, obj.rect.x + obj.rect.width, obj.rect.y + obj.rect.height, class_names[obj.label]);
-
+#endif
         cv::rectangle(image, cv::Rect(obj.rect.x, obj.rect.y, obj.rect.width, obj.rect.height), colors[obj.label], 3);
 
         char text[256];
@@ -345,6 +365,9 @@ int main
 	return -1;
     }
 #else
+
+    // title of drawing window
+    const char* t = "C3V-yolov5s";
     //video
     cap.open("./input.mp4");
 #endif
@@ -400,9 +423,31 @@ int main
         //
         cv::cvtColor( img, img, cv::COLOR_RGB2BGR );
 
-        cv::namedWindow("C3V-yolov5s", cv::WINDOW_AUTOSIZE);
-        cv::imshow("C3V-yolov5s", img);
+        uint64_t t0 = now();
+        if (frames) {
+            char s[360];
+            sprintf(s, "%s FPS:%.1f", t, (float)frames / (t0 - st));
+#if DRAW_RESULT
+            cv::setWindowTitle(t, s);
+#else
+            puts(s);
+#endif
+        } else {
+            st = t0;
+        }
 
+	    frames += 1000000000;
+
+#if DRAW_RESULT
+        cv::namedWindow(t, cv::WINDOW_AUTOSIZE);
+        cv::imshow(t, img);
+#else
+    #if 0 // if no display, write out result pic
+		std::vector<int> compression_params;
+		compression_params.push_back(0);
+		cv::imwrite("output.png", img, compression_params);
+    #endif
+#endif
         // press 'q' key break main loop
         if (cv::waitKey(1) == 'q') {
             break;

@@ -28,6 +28,8 @@ extern "C" {
 
 #define DETECT_RESULT_IMPL 1
 
+#define DRAW_RESULT 1
+
 /*-------------------------------------------
                   Variable definitions
 -------------------------------------------*/
@@ -232,11 +234,11 @@ static void post_proc_process(vsi_nn_graph_t *graph, std::vector<Object>& objs)
     for (size_t i = 0; i < MAX_PICKED_NUM && i < proposals->num; i++) {
         if(picked[i] >= 0){
             Object obj = proposals->obj[picked[i]];
-
+#if !DRAW_RESULT
             printf("obj: L:%2d P:%.02f, [(%d, %d) - (%d, %d)]\n", 
                 obj.label, obj.prob, 
                 (int)obj.rect.x, (int)obj.rect.y, (int)obj.rect.width, (int)obj.rect.height);
-
+#endif
 	    objs.push_back(obj);
         }
     }
