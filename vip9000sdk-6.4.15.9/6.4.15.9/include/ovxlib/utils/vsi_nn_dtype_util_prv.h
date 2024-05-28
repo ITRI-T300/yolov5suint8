@@ -343,6 +343,7 @@ static VSI_INLINE_API vsi_status integer_convert
 } /* integer_convert() */
 
 //Add by  yingwei for slim code, 20240527
+#if 0
 static VSI_INLINE_API vsi_status integer_convert_itri
     (
     const void *    src,
@@ -377,6 +378,7 @@ static VSI_INLINE_API vsi_status integer_convert_itri
     }
     return status;
 } /* integer_convert() */
+#endif
 //End by  yingwei for slim code, 20240527
 
 typedef union

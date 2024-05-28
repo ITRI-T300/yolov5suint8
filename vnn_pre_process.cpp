@@ -205,7 +205,8 @@ static uint8_t *_float32_to_dtype
         int32_t dst_value = 0;
         dst_value = fp32_to_affine(fdata[i], scale, zero_point, vx_type);
         //dst_value = fp32_to_affine(fdata[i], tensor->attr.dtype.scale, tensor->attr.dtype.zero_point, tensor->attr.dtype.vx_type);
-        integer_convert_itri( &dst_value, VSI_NN_TYPE_INT32, &data[stride * i], tensor->attr.dtype.vx_type);
+        data[stride * i] = *((uint8_t *)&dst_value);
+        //integer_convert_itri( &dst_value, VSI_NN_TYPE_INT32, &data[stride * i], tensor->attr.dtype.vx_type);
         //integer_convert( &dst_value, VSI_NN_TYPE_INT32, &data[stride * i], tensor->attr.dtype.vx_type);
         /*
         status = vsi_nn_Float32ToDtype(fdata[i], &data[stride * i], &tensor->attr.dtype);
