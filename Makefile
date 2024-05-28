@@ -13,6 +13,7 @@ INCLUDES=-I. -I$(VIVANTE_SDK_DIR)/include/ \
  -I$(VIVANTE_SDK_DIR)/include/CL \
  -I$(VIVANTE_SDK_DIR)/include/VX \
  -I$(VIVANTE_SDK_DIR)/include/ovxlib \
+ -I$(VIVANTE_SDK_DIR)/include/ovxlib/utils \
   $(shell pkg-config opencv4 --cflags) \
  -I$(VIVANTE_SDK_DIR)/include/jpeg
 

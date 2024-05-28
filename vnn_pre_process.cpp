@@ -17,6 +17,8 @@ extern "C"{
 #include "vsi_nn_pub.h"
 #include "vnn_global.h"
 #include "vnn_pre_process.h"
+#include "vsi_nn_dtype_util_prv.h"
+#include "vsi_nn_tensor.h"
 }
 
 #define _BASETSD_H
@@ -170,6 +172,8 @@ static vsi_status _jpeg_to_bmp
     return VSI_SUCCESS;
 }
 
+//Mod by yingwei for slim code, 20240527
+
 static uint8_t *_float32_to_dtype
     (
     float *fdata,
@@ -179,6 +183,9 @@ static uint8_t *_float32_to_dtype
     vsi_status status;
     uint8_t *data;
     vsi_size_t sz,i,stride;
+    float scale;
+    int32_t zero_point;
+    vsi_nn_type_e vx_type;
 
     sz = vsi_nn_GetElementNum(tensor);
     stride = vsi_nn_TypeGetBytes(tensor->attr.dtype.vx_type);
@@ -189,20 +196,31 @@ static uint8_t *_float32_to_dtype
     data = (uint8_t *)malloc(stride * sz * sizeof(uint8_t));
     TEST_CHECK_PTR(data, final);
     memset(data, 0, stride * sz * sizeof(uint8_t));
-
+    
+    scale = tensor->attr.dtype.scale;
+    zero_point = tensor->attr.dtype.zero_point;
+    vx_type = tensor->attr.dtype.vx_type;   
     for(i = 0; i < sz; i++)
-    {
+    {   
+        int32_t dst_value = 0;
+        dst_value = fp32_to_affine(fdata[i], scale, zero_point, vx_type);
+        //dst_value = fp32_to_affine(fdata[i], tensor->attr.dtype.scale, tensor->attr.dtype.zero_point, tensor->attr.dtype.vx_type);
+        integer_convert_itri( &dst_value, VSI_NN_TYPE_INT32, &data[stride * i], tensor->attr.dtype.vx_type);
+        //integer_convert( &dst_value, VSI_NN_TYPE_INT32, &data[stride * i], tensor->attr.dtype.vx_type);
+        /*
         status = vsi_nn_Float32ToDtype(fdata[i], &data[stride * i], &tensor->attr.dtype);
         if(status != VSI_SUCCESS)
         {
             if(data)free(data);
             return NULL;
         }
-    }
+        */
+    }  
 
 final:
     return data;
 }
+//End by yingwei for slim code, 20240527
 
 static float *_imageData_to_float32
     (
