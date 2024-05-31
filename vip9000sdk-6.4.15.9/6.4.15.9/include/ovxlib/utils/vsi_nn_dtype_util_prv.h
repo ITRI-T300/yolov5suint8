@@ -342,45 +342,6 @@ static VSI_INLINE_API vsi_status integer_convert
     return status;
 } /* integer_convert() */
 
-//Add by  yingwei for slim code, 20240527
-#if 0
-static VSI_INLINE_API vsi_status integer_convert_itri
-    (
-    const void *    src,
-    vsi_nn_type_e   src_type,
-    void *          dest,
-    vsi_nn_type_e   dest_type
-    )
-{
-    vsi_status status = VSI_SUCCESS;
-    if( type_is_integer( src_type ) && type_is_integer( dest_type ) )
-    {
-        uint8_t    all_zeros[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-        uint8_t    all_ones[] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
-        uint32_t   src_sz = type_get_bytes( src_type );
-        uint32_t   dest_sz = type_get_bytes( dest_type );
-        const uint8_t* src_ptr = (const uint8_t*)src;
-        uint8_t* dest_ptr = (uint8_t*)dest;
-        uint8_t*   buffer = all_zeros;
-
-        if( type_is_signed( src_type ) && (((int8_t *)src)[src_sz - 1] & 0x80) )
-        {
-            buffer = all_ones;
-        }
-
-        ((uint8_t*)buffer)[0] = src_ptr[0];
-        dest_ptr[0] = buffer[0];
-
-    }
-    else
-    {
-        status = VSI_FAILURE;
-    }
-    return status;
-} /* integer_convert() */
-#endif
-//End by  yingwei for slim code, 20240527
-
 typedef union
 {
     uint32_t u;

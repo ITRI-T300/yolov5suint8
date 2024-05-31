@@ -48,23 +48,6 @@ static uint64_t st, frames; // for FPS stat
 /*-------------------------------------------
                   Functions
 -------------------------------------------*/
-#define BILLION 1000000000
-uint64_t now()
-{
-#if defined(__linux__) || defined(__ANDROID__) || defined(__QNX__) || defined(__CYGWIN__)
-        struct timespec ts;
-
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-
-        return (uint64_t)((uint64_t)ts.tv_nsec + (uint64_t)ts.tv_sec * BILLION);
-#elif defined(_WIN32) || defined(UNDER_CE)
-        LARGE_INTEGER ln;
-
-        QueryPerformanceCounter(&ln);
-
-        return (uint64_t)ln.QuadPart;
-#endif
-}
 
 static void draw_objects(const cv::Mat& image, const std::vector<Object>& objects)
 {
@@ -423,7 +406,7 @@ int main
         //
         cv::cvtColor( img, img, cv::COLOR_RGB2BGR );
 
-        uint64_t t0 = now();
+        uint64_t t0 = get_perf_count();
         if (frames) {
             char s[360];
             sprintf(s, "%s FPS:%.1f", t, (float)frames / (t0 - st));
