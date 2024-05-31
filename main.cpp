@@ -45,6 +45,7 @@ extern "C" {
 static uint64_t st, frames; // for FPS stat
 
 #define DRAW_RESULT 1
+#define DEBUG 0
 /*-------------------------------------------
                   Functions
 -------------------------------------------*/
@@ -179,15 +180,18 @@ static vsi_status vnn_VerifyGraph
     uint64_t tmsStart, tmsEnd, msVal, usVal;
 
     /* Verify graph */
+#if DEBUG
     printf("Verify...\n");
     tmsStart = get_perf_count();
+#endif
     status = vsi_nn_VerifyGraph( graph );
     TEST_CHECK_STATUS(status, final);
+#if DEBUG
     tmsEnd = get_perf_count();
     msVal = (tmsEnd - tmsStart)/1000000;
     usVal = (tmsEnd - tmsStart)/1000;
     printf("Verify Graph: %"VSI_UINT64_SPECIFIER"ms or %"VSI_UINT64_SPECIFIER"us\n", msVal, usVal);
-
+#endif
 final:
     return status;
 }
@@ -212,11 +216,15 @@ static vsi_status vnn_ProcessGraph
     }
 
     /* Run graph */
+#if DEBUG
     tmsStart = get_perf_count();
     printf("Start run graph [%d] times...\n", loop);
+#endif
     for(i = 0; i < loop; i++)
     {
+#if DEBUG
         sigStart = get_perf_count();
+#endif
 #ifdef VNN_APP_ASYNC_RUN
         status = vsi_nn_AsyncRunGraph( graph );
         if(status != VSI_SUCCESS)
@@ -240,19 +248,21 @@ static vsi_status vnn_ProcessGraph
         }
 #endif
         TEST_CHECK_STATUS( status, final );
-
+#if DEBUG
         sigEnd = get_perf_count();
         msVal = (sigEnd - sigStart)/(float)1000000;
         usVal = (sigEnd - sigStart)/(float)1000;
         printf("Run the %u time: %.2fms or %.2fus\n", (i + 1), msVal, usVal);
+#endif
     }
+#if DEBUG
     tmsEnd = get_perf_count();
     msVal = (tmsEnd - tmsStart)/(float)1000000;
     usVal = (tmsEnd - tmsStart)/(float)1000;
     printf("vxProcessGraph execution time:\n");
     printf("Total   %.2fms or %.2fus\n", msVal, usVal);
     printf("Average %.2fms or %.2fus\n", ((float)usVal)/1000/loop, ((float)usVal)/loop);
-
+#endif
 final:
     return status;
 }
@@ -283,18 +293,19 @@ static vsi_nn_graph_t *vnn_CreateNeuralNetwork
 {
     vsi_nn_graph_t *graph = NULL;
     uint64_t tmsStart, tmsEnd, msVal, usVal;
-
+#if DEBUG
     tmsStart = get_perf_count();
+#endif
     graph = vnn_CreateYolov5sUint8( data_file_name, NULL,
                       vnn_GetPreProcessMap(), vnn_GetPreProcessMapCount(),
                       vnn_GetPostProcessMap(), vnn_GetPostProcessMapCount() );
     TEST_CHECK_PTR(graph, final);
-
+#if DEBUG
     tmsEnd = get_perf_count();
     msVal = (tmsEnd - tmsStart)/1000000;
     usVal = (tmsEnd - tmsStart)/1000;
     printf("Create Neural Network: %"VSI_UINT64_SPECIFIER"ms or %"VSI_UINT64_SPECIFIER"us\n", msVal, usVal);
-
+#endif
 final:
     return graph;
 }
@@ -367,7 +378,7 @@ int main
         //
         // convert to fit model's input data format
         //
-        cv::resize( img, img, cv::Size(640,640) );
+        cv::resize( img, img, cv::Size(640,640), 0, 0, 0 );
         cv::cvtColor( img, img, cv::COLOR_BGR2RGB );
 
         uint8_t* pRgb = new uint8_t[img.rows * img.cols * 3];

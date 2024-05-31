@@ -215,6 +215,7 @@ static void post_proc_process(vsi_nn_graph_t *graph, std::vector<Object>& objs)
     static int picked[MAX_PICKED_NUM];
     static int *ppicked=picked;
 
+#pragma omp parallel for schedule(guided)
     for (int j = 0; j < OUT_N; j++) {
 		out[j] = vsi_nn_ConvertTensorToData(graph, tensors[j]);
     }

@@ -200,6 +200,7 @@ static uint8_t *_float32_to_dtype
     scale = tensor->attr.dtype.scale;
     zero_point = tensor->attr.dtype.zero_point;
     vx_type = tensor->attr.dtype.vx_type;   
+#pragma omp parallel for schedule(guided)
     for(i = 0; i < sz; i++)
     {   
         int32_t dst_value = 0;
@@ -708,13 +709,13 @@ static vsi_status _handle_multiple_inputs
     /* Copy the Pre-processed data to input tensor */
     status = vsi_nn_CopyDataToTensor(graph, tensor, data);
     TEST_CHECK_STATUS(status, final);
-
+#if 0 // Removed it to speed up
     /* Save the image data to file */
     p1 = getenv( "VSI_SAVE_FILE_TYPE");
 
     snprintf(dumpInput, sizeof(dumpInput), "input_%d.dat", idx);
     vsi_nn_SaveTensorToBinary(graph, tensor, dumpInput);
-
+#endif
 
     status = VSI_SUCCESS;
 final:
