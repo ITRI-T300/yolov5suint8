@@ -22,7 +22,7 @@ CFLAGS+=-O3
 LFLAGS+=-O3 -Wl,-rpath-link=$(VIVANTE_SDK_DIR)/drivers
 
 LIBS+= -L$(VIVANTE_SDK_DIR)/drivers \
- -lOpenVX -lOpenVXU -lovxlib -ljpeg -lm $(shell pkg-config opencv4 --libs) -lstdc++
+ -lOpenVX -lOpenVXU -lovxlib -ljpeg -lm $(shell pkg-config opencv4 --libs) -lstdc++ -pthread -lX11
 
 SRCS=${wildcard *.c}
 SRCS+=${wildcard *.cpp}

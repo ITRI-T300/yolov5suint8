@@ -17,6 +17,10 @@
 #include <windows.h>
 #endif
 
+#include <pthread.h>
+#include <unistd.h>
+#include <X11/Xlib.h>
+#include <semaphore.h>
 #define _BASETSD_H
 
 extern "C" {
@@ -45,7 +49,8 @@ extern "C" {
 static uint64_t st, frames; // for FPS stat
 
 #define DRAW_RESULT 1
-#define DEBUG 0
+#define PERF 0
+#define ASYNC_RUN 0
 /*-------------------------------------------
                   Functions
 -------------------------------------------*/
@@ -180,13 +185,13 @@ static vsi_status vnn_VerifyGraph
     uint64_t tmsStart, tmsEnd, msVal, usVal;
 
     /* Verify graph */
-#if DEBUG
+#if PERF
     printf("Verify...\n");
     tmsStart = get_perf_count();
 #endif
     status = vsi_nn_VerifyGraph( graph );
     TEST_CHECK_STATUS(status, final);
-#if DEBUG
+#if PERF
     tmsEnd = get_perf_count();
     msVal = (tmsEnd - tmsStart)/1000000;
     usVal = (tmsEnd - tmsStart)/1000;
@@ -216,13 +221,13 @@ static vsi_status vnn_ProcessGraph
     }
 
     /* Run graph */
-#if DEBUG
+#if PERF
     tmsStart = get_perf_count();
     printf("Start run graph [%d] times...\n", loop);
 #endif
     for(i = 0; i < loop; i++)
     {
-#if DEBUG
+#if PERF
         sigStart = get_perf_count();
 #endif
 #ifdef VNN_APP_ASYNC_RUN
@@ -248,14 +253,14 @@ static vsi_status vnn_ProcessGraph
         }
 #endif
         TEST_CHECK_STATUS( status, final );
-#if DEBUG
+#if PERF
         sigEnd = get_perf_count();
         msVal = (sigEnd - sigStart)/(float)1000000;
         usVal = (sigEnd - sigStart)/(float)1000;
         printf("Run the %u time: %.2fms or %.2fus\n", (i + 1), msVal, usVal);
 #endif
     }
-#if DEBUG
+#if PERF
     tmsEnd = get_perf_count();
     msVal = (tmsEnd - tmsStart)/(float)1000000;
     usVal = (tmsEnd - tmsStart)/(float)1000;
@@ -293,14 +298,14 @@ static vsi_nn_graph_t *vnn_CreateNeuralNetwork
 {
     vsi_nn_graph_t *graph = NULL;
     uint64_t tmsStart, tmsEnd, msVal, usVal;
-#if DEBUG
+#if PERF
     tmsStart = get_perf_count();
 #endif
     graph = vnn_CreateYolov5sUint8( data_file_name, NULL,
                       vnn_GetPreProcessMap(), vnn_GetPreProcessMapCount(),
                       vnn_GetPostProcessMap(), vnn_GetPostProcessMapCount() );
     TEST_CHECK_PTR(graph, final);
-#if DEBUG
+#if PERF
     tmsEnd = get_perf_count();
     msVal = (tmsEnd - tmsStart)/1000000;
     usVal = (tmsEnd - tmsStart)/1000;
@@ -308,6 +313,169 @@ static vsi_nn_graph_t *vnn_CreateNeuralNetwork
 #endif
 final:
     return graph;
+}
+
+typedef struct {
+    vsi_nn_graph_t graph;
+    cv::Mat img;
+} DataBatch;
+
+#define QUEUE_SIZE 5
+
+DataBatch queue1[QUEUE_SIZE], queue2[QUEUE_SIZE], queue3[QUEUE_SIZE];
+int head1 = 0, tail1 = 0, head2 = 0, tail2 = 0, head3 = 0, tail3 = 0;
+sem_t empty1, full1, mutex1;
+sem_t empty2, full2, mutex2;
+sem_t empty3, full3, mutex3;
+
+vsi_nn_graph_t *graph;// TODO: checkit
+char* video_name;
+const char* t = "yolov5s";// title of drawing window
+
+void* cam_video_in(void* arg) {
+    cv::VideoCapture cap;
+    cv::Mat img;
+
+    if ( 0 == strcmp(video_name,"cam") ){
+        //
+        // get frame data from camera
+        //
+        cap.open(0);
+        cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
+        cap.set(cv::CAP_PROP_FRAME_WIDTH, 640);
+        cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
+        cap.set(cv::CAP_PROP_FPS, 20);
+
+        if (!cap.isOpened()){
+	        std::cerr<< "ERROE!!Unable to open camera\n";
+	        pthread_exit(NULL);
+        }
+    }else{
+        cap.open(video_name);
+        if (!cap.isOpened()){
+	        std::cerr<< "ERROE!!Unable to open file\n";
+	        pthread_exit(NULL);
+        }
+    }
+
+    while(1){
+        //read frame from cam
+        bool ret = cap.read(img);
+        if(!ret){
+            printf("Can't receive frame.. Exiting..\n");
+            break;
+        }
+
+        //
+        // convert to fit model's input data format
+        //
+        cv::flip( img, img, 1);
+        cv::cvtColor( img, img, cv::COLOR_BGR2RGB );
+        cv::resize( img, img, cv::Size(640,640), 0, 0, 0 );
+
+	DataBatch batch;
+
+        // clone data
+	memcpy(&(batch.graph), graph, sizeof(vsi_nn_graph_t));
+	batch.img=img.clone();
+
+        sem_wait(&empty1);
+        sem_wait(&mutex1);
+
+        queue1[head1] = batch;
+        head1 = (head1 + 1) % QUEUE_SIZE;
+
+        sem_post(&mutex1);
+        sem_post(&full1);
+    }
+    cap.release();//release cam
+
+    pthread_exit(NULL);
+}
+
+void* preprocess(void* arg) {
+	vsi_status status = VSI_FAILURE;
+
+	while (1) {
+
+        sem_wait(&full1);
+        sem_wait(&mutex1);
+
+        DataBatch batch = queue1[tail1];
+        tail1 = (tail1 + 1) % QUEUE_SIZE;
+
+        sem_post(&mutex1);
+        sem_post(&empty1);
+
+	//dummy input
+        int argc = 3;
+        char *argv[4]={"test","network_binary.bg","cv.jpg"};
+
+	uint8_t* pRgb = new uint8_t[batch.img.rows * batch.img.cols * 3];
+        Mat_to_array(batch.img, pRgb);
+
+	/* Pre process the image data */
+        status = vnn_PreProcessNeuralNetwork( &(batch.graph), argc, argv, pRgb);
+        //TEST_CHECK_STATUS( status, final );
+
+        sem_wait(&empty2);
+        sem_wait(&mutex2);
+
+        queue2[head2] = batch;
+        head2 = (head2 + 1) % QUEUE_SIZE;
+
+        sem_post(&mutex2);
+        sem_post(&full2);
+    }
+    return NULL;
+}
+
+void* inference(void* arg) {
+	vsi_status status = VSI_FAILURE;
+    struct timeval now;
+    struct timespec outtime;
+
+	while (1) {
+        sem_wait(&full2);
+        sem_wait(&mutex2);
+
+        DataBatch batch = queue2[tail2];
+        tail2 = (tail2 + 1) % QUEUE_SIZE;
+
+        sem_post(&mutex2);
+        sem_post(&empty2);
+
+#if ASYNC_RUN
+        status = vsi_nn_AsyncRunGraph( &(batch.graph) );
+        if(status != VSI_SUCCESS){
+            printf("Async Run graph fail\n");
+        }
+        //TEST_CHECK_STATUS( status, final );
+
+        pthread_yield();
+
+        status = vsi_nn_AsyncRunWait( &(batch.graph) );
+        if(status != VSI_SUCCESS){
+            printf("Wait graph fail\n");
+        }
+#else
+        status = vsi_nn_RunGraph( &(batch.graph) );
+        if(status != VSI_SUCCESS){
+            printf("Run graph fail\n");
+        }
+#endif
+        //TEST_CHECK_STATUS( status, final );
+
+        sem_wait(&empty3);
+        sem_wait(&mutex3);
+
+        queue3[head3] = batch;
+        head3 = (head3 + 1) % QUEUE_SIZE;
+
+        sem_post(&mutex3);
+        sem_post(&full3);
+    }
+    return NULL;
 }
 
 /*-------------------------------------------
@@ -320,102 +488,72 @@ int main
     )
 {
     vsi_status status = VSI_FAILURE;
-    vsi_nn_graph_t *graph;
     const char *data_name = NULL;
 
     if(argc < 3)
     {
-        printf("Usage: %s data_file inputs...\n", argv[0]);
+        printf("Usage: %s nb_file [cam/video_file_name]\n", argv[0]);
         return -1;
     }
 
+    // it is necessary, if multiple threads might use Xlib concurrently
+    XInitThreads();
+
     data_name = (const char *)argv[1];
 
-    cv::VideoCapture cap;
-    cv::Mat img;
+    video_name = argv[2];
 
     /* Create the neural network */
     graph = vnn_CreateNeuralNetwork( data_name );
     //TEST_CHECK_PTR( graph, final );
-
+#if 0// disable verification
     /* Verify graph */
     status = vnn_VerifyGraph( graph );
     //TEST_CHECK_STATUS( status, final);
-
-#if 0
-    //
-    // get frame data from camera
-    //
-
-    cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
-    cap.set(cv::CAP_PROP_FRAME_WIDTH, 640);
-    cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
-
-    cap.open(0);
-
-    if (!cap.isOpened())
-    {
-	std::cerr<< "ERROE!!Unable to open camera\n";
-	return -1;
-    }
-#else
-
-    // title of drawing window
-    const char* t = "C3V-yolov5s";
-    //video
-    cap.open("./input.mp4");
 #endif
+
+    pthread_t cam_thread, preprocessor_thread,
+	      inference_thread, postprocessor_thread;
+
+    sem_init(&empty1, 0, QUEUE_SIZE);
+    sem_init(&full1, 0, 0);
+    sem_init(&mutex1, 0, 1);
+    sem_init(&empty2, 0, QUEUE_SIZE);
+    sem_init(&full2, 0, 0);
+    sem_init(&mutex2, 0, 1);
+    sem_init(&empty3, 0, QUEUE_SIZE);
+    sem_init(&full3, 0, 0);
+    sem_init(&mutex3, 0, 1);
+
+    pthread_create(&cam_thread, NULL, cam_video_in, NULL);
+    pthread_create(&preprocessor_thread, NULL, preprocess, NULL);
+    pthread_create(&inference_thread, NULL, inference, NULL);
 
     /* Inference Process Loop */
     while(1) {
-        //read frame from cam
-        bool ret = cap.read(img);
-        if(!ret){
-            printf("Can't receive frame.. Exiting..\n");
-            break;
-        }
 
-        //
-        // convert to fit model's input data format
-        //
-        cv::resize( img, img, cv::Size(640,640), 0, 0, 0 );
-        cv::cvtColor( img, img, cv::COLOR_BGR2RGB );
+        {// POST-start
+        sem_wait(&full3);
+        sem_wait(&mutex3);
 
-        uint8_t* pRgb = new uint8_t[img.rows * img.cols * 3];
-        Mat_to_array(img, pRgb);
+        DataBatch batch = queue3[tail3];
+        tail3 = (tail3 + 1) % QUEUE_SIZE;
 
-        //dummy input
-        argc = 3;
-        std::string cv_file="cv.jpg";
-        argv[2]=cv_file.c_str();
-
-        /* Pre process the image data */
-        status = vnn_PreProcessNeuralNetwork( graph, argc, argv, pRgb);
-        //TEST_CHECK_STATUS( status, final );
-
-        /* Process graph */
-        status = vnn_ProcessGraph( graph );
-        //TEST_CHECK_STATUS( status, final );
-
-        if(VNN_APP_DEBUG)
-        {
-            /* Dump all node outputs */
-            vsi_nn_DumpGraphNodeOutputs(graph, "./network_dump", NULL, 0, TRUE,
-			                (vsi_nn_dim_fmt_e)0);
-        }
+        sem_post(&mutex3);
+        sem_post(&empty3);
 
         /* Post process output data */
         std::vector<Object> objects;
 
-        status = vnn_PostProcessNeuralNetwork( graph, objects);
+        status = vnn_PostProcessNeuralNetwork( &(batch.graph), objects );
         //TEST_CHECK_STATUS( status, final );
 
-        draw_objects(img, objects);
+        draw_objects(batch.img, objects);
 
         //
         // to make sure output image's colorspace is BGR (OpenCV default)
         //
-        cv::cvtColor( img, img, cv::COLOR_RGB2BGR );
+        cv::cvtColor( batch.img, batch.img, cv::COLOR_RGB2BGR );
 
         uint64_t t0 = get_perf_count();
         if (frames) {
@@ -430,11 +568,11 @@ int main
             st = t0;
         }
 
-	    frames += 1000000000;
+        frames += 1000000000;
 
 #if DRAW_RESULT
         cv::namedWindow(t, cv::WINDOW_AUTOSIZE);
-        cv::imshow(t, img);
+        cv::imshow(t, batch.img);
 #else
     #if 0 // if no display, write out result pic
 		std::vector<int> compression_params;
@@ -442,16 +580,35 @@ int main
 		cv::imwrite("output.png", img, compression_params);
     #endif
 #endif
+        }// POST-end
+
         // press 'q' key break main loop
         if (cv::waitKey(1) == 'q') {
+            printf("Quiting inference loop..\n");
             break;
         }
     }
-final:
-    //delete[] pRgb;//release data //TODO: check
-    cap.release();//release cam
-    cv::destroyAllWindows();
+    pthread_cancel(cam_thread);
+    pthread_join(cam_thread, NULL);
+    usleep(1);
+    pthread_cancel(preprocessor_thread);
+    pthread_join(preprocessor_thread, NULL);
+    usleep(1);
+    pthread_cancel(inference_thread);
+    pthread_join(inference_thread, NULL);
 
+    sem_destroy(&empty1);
+    sem_destroy(&full1);
+    sem_destroy(&mutex1);
+    sem_destroy(&empty2);
+    sem_destroy(&full2);
+    sem_destroy(&mutex2);
+    sem_destroy(&empty3);
+    sem_destroy(&full3);
+    sem_destroy(&mutex3);
+
+final:
+    cv::destroyAllWindows();
     vnn_ReleaseNeuralNetwork( graph );
     fflush(stdout);
     fflush(stderr);
