@@ -83,8 +83,9 @@ static void draw_objects(const cv::Mat& image, const std::vector<Object>& object
     }
 
 	const Object& obj = objects[i];
+	int label_list_size = sizeof class_names / sizeof class_names[0];
 
-	if( (obj.label==-1) || std::isnan(obj.prob) )
+	if( (obj.label==-1) || (obj.label>label_list_size) || std::isnan(obj.prob) )
 		continue;
 #if !DRAW_RESULT
         fprintf(stderr, "%2d: %3.0f%%, [%4.0f, %4.0f, %4.0f, %4.0f], %s\n", obj.label, obj.prob * 100, obj.rect.x,
