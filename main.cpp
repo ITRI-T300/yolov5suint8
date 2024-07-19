@@ -19,7 +19,6 @@
 
 #include <pthread.h>
 #include <unistd.h>
-#include <X11/Xlib.h>
 #include <semaphore.h>
 #define _BASETSD_H
 
@@ -37,6 +36,7 @@ extern "C" {
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
 
+#include <X11/Xlib.h>
 /*-------------------------------------------
         Macros and Variables
 -------------------------------------------*/
